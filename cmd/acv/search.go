@@ -20,7 +20,7 @@ type SearchManager struct {
 func NewSearchManager(
 	setFocusFunc func(tview.Primitive),
 	searchChangedFunc func(string),
-) SearchManager {
+) *SearchManager {
 	// Setting search box
 	searchBox := tview.NewInputField().
 		SetFieldBackgroundColor(tcell.ColorBlack).
@@ -53,7 +53,7 @@ func NewSearchManager(
 
 	searchBox.SetInputCapture(manager.onInput)
 
-	return manager
+	return &manager
 }
 
 func (sm *SearchManager) GetPrimitive() tview.Primitive {

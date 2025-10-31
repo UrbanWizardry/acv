@@ -105,8 +105,7 @@ func NewValuesManager(
 	manager.valueTextView = configValue
 
 	// Value Text Search Bar
-	var valueSearchManager SearchManager
-	valueSearchManager = NewSearchManager(
+	manager.valueSearchManager = NewSearchManager(
 		func(p tview.Primitive) {
 			setFocusFunc(p)
 		},
@@ -119,10 +118,9 @@ func NewValuesManager(
 
 			configValue.Highlight("search")
 			configValue.ScrollToHighlight()
-			valueSearchManager.setSearchType(NoSearch)
+			manager.valueSearchManager.setSearchType(NoSearch)
 		},
 	)
-	manager.valueSearchManager = &valueSearchManager
 
 	// Layout Grid
 	grid := tview.NewGrid()

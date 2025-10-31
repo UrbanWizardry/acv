@@ -6,67 +6,89 @@ import (
 )
 
 type KeysManager struct {
-	box             *tview.Grid
-	keys            *tview.Table
-	keySelectedFunc func(string)
+	grid                 *tview.Grid
+	keys                 *tview.Table
+	settingSearchManager *SearchManager
+	keySelectedFunc      func(string)
 }
 
 func NewKeysManager(
 	keySelectedFunc func(string),
-) KeysManager {
-	box := tview.NewGrid()
-	box.SetBorder(true)
+) *KeysManager {
+	manager := KeysManager{
+		keySelectedFunc: keySelectedFunc,
+	}
 
-	box.SetFocusFunc(func() {
-		box.SetBorderColor(tcell.ColorBlue)
-	}).SetBlurFunc(func() {
-		box.SetBorderColor(tcell.ColorWhite)
+	manager.grid = tview.NewGrid()
+
+	// Set things that chain as *tview.Box
+	manager.grid.
+		SetRows(0, 3).
+		SetFocusFunc(func() {
+			manager.grid.SetBorderColor(tcell.ColorBlue)
+		}).SetBlurFunc(func() {
+		manager.grid.SetBorderColor(tcell.ColorWhite)
 	})
 
-	keys := tview.NewTable().
+	manager.keys = tview.NewTable().
 		SetBorders(false).
 		SetSelectable(true, false).
-		Select(0, 0)
+		Select(0, 0).
+		SetSelectedFunc(manager.settingSelected)
 
-	keys.SetFocusFunc(func() {
+	// Set things that chain as *tview.Box
+	manager.keys.SetFocusFunc(func() {
 		style := tcell.Style{}.Foreground(tcell.ColorBlue).Bold(true).Background(tcell.ColorBlack)
-		for row := range keys.GetRowCount() {
-			for col := range keys.GetColumnCount() {
-				keys.GetCell(row, col).SetStyle(style)
+		for row := range manager.keys.GetRowCount() {
+			for col := range manager.keys.GetColumnCount() {
+				manager.keys.GetCell(row, col).SetStyle(style)
 			}
 		}
 	}).SetBlurFunc(func() {
 		style := tcell.Style{}.Foreground(tcell.ColorAntiqueWhite).Bold(false).Background(tcell.ColorBlack)
-		for row := range keys.GetRowCount() {
-			for col := range keys.GetColumnCount() {
-				keys.GetCell(row, col).SetStyle(style)
+		for row := range manager.keys.GetRowCount() {
+			for col := range manager.keys.GetColumnCount() {
+				manager.keys.GetCell(row, col).SetStyle(style)
 			}
 		}
-	})
+	}).SetBorderPadding(1, 1, 1, 1)
 
-	box.AddItem(keys, 0, 0, 1, 1, 0, 0, false)
+	keysBox := tview.NewGrid()
+	keysBox.SetBorder(true)
+	keysBox.AddItem(manager.keys, 0, 0, 1, 1, 0, 0, false)
 
-	manager := KeysManager{
-		box:             box,
-		keys:            keys,
-		keySelectedFunc: keySelectedFunc,
-	}
+	manager.grid.AddItem(keysBox, 0, 0, 1, 1, 0, 0, false)
 
-	keys.SetSelectedFunc(manager.settingSelected)
+	// Setting Search Bar
+	manager.settingSearchManager = NewSearchManager(
+		func(p tview.Primitive) {
+			app.SetFocus(p)
+		},
+		func(s string) {
+			findSettings(s)
+			updateKeysList()
+			app.SetFocus(manager.keys)
+			manager.settingSearchManager.setSearchType(NoSearch)
+		},
+	)
 
-	keys.SetBorderPadding(1, 1, 1, 1)
+	manager.grid.AddItem(manager.settingSearchManager.GetPrimitive(), 1, 0, 1, 1, 0, 0, false)
 
-	return manager
+	return &manager
 }
 
-func (km KeysManager) updateKeys(settings []string) {
+func (km *KeysManager) GetPrimitive() tview.Primitive {
+	return km.grid
+}
+
+func (km *KeysManager) updateKeys(settings []string) {
 	km.keys.Clear()
 	for row, setting := range settings {
 		km.keys.SetCell(row, 0, tview.NewTableCell(setting))
 	}
 }
 
-func (km KeysManager) settingSelected(row int, col int) {
+func (km *KeysManager) settingSelected(row int, col int) {
 	settingCell := km.keys.GetCell(row, col)
 	if settingCell == nil {
 		return
@@ -75,6 +97,6 @@ func (km KeysManager) settingSelected(row int, col int) {
 	km.keySelectedFunc(settingCell.Text)
 }
 
-func (km KeysManager) SetTitle(title string) {
-	km.box.SetTitle(title)
+func (km *KeysManager) SetTitle(title string) {
+	km.grid.SetTitle(title)
 }

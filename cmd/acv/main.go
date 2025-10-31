@@ -21,17 +21,16 @@ import (
 )
 
 var (
-	settings             []azappconfig.Setting
-	app                  *tview.Application
-	header               *Header
-	acDropdown           *tview.DropDown
-	info                 *tview.Grid
-	client               *azappconfig.Client
-	cred                 *azidentity.DefaultAzureCredential
-	keysManager          KeysManager
-	valuesManager        *ValuesManager
-	settingSearchManager SearchManager
-	viewMode             ValueDisplayMode
+	settings      []azappconfig.Setting
+	app           *tview.Application
+	header        *Header
+	info          *tview.Grid
+	client        *azappconfig.Client
+	cred          *azidentity.DefaultAzureCredential
+	keysManager   *KeysManager
+	valuesManager *ValuesManager
+
+	viewMode ValueDisplayMode
 )
 
 const (
@@ -55,55 +54,29 @@ func main() {
 		configServers = append(configServers, os.Args[1])
 	}
 
-	// Attempt to get config file
-	home, err := os.UserHomeDir()
-	if err == nil {
-		acvConfigFile := path.Join(home, ".acv")
-		_, err = os.Stat(acvConfigFile)
-		if err == nil {
-			// Found a config file.
-			data, err := os.ReadFile(acvConfigFile)
-			if err != nil {
-				panic(fmt.Errorf("error reading confg file at %s", acvConfigFile))
-			}
-
-			var config acvConfig
-			err = yaml.Unmarshal(data, &config)
-			if err != nil {
-				panic(errors.Wrapf(err, "error unmarshalling confg file at %s", acvConfigFile))
-			}
-
-			for _, configServer := range config.ConfigServers {
-				if !slices.Contains(configServers, configServer) {
-					configServers = append(configServers, configServer)
-				}
-			}
-		}
-	}
+	configServers = serversFromConfigFile(configServers)
 
 	if len(configServers) == 0 {
-		fmt.Println("No app configurations to open, exiting")
-		os.Exit(1)
+		log.Fatal("No app configurations to open, exiting")
 	}
 
+	var err error
 	cred, err = azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		log.Fatalf("failed to obtain a credential: %v", err)
 	}
 
 	// Top stuff
-	header := NewHeader(configServers)
-
-	// Setting Search Bar
-	settingSearchManager = NewSearchManager(
-		func(p tview.Primitive) {
-			app.SetFocus(p)
+	header = NewHeader(
+		configServers,
+		func() {
+			app.SetFocus(keysManager.keys)
 		},
-		func(s string) {
-			findSettings(s)
+		func(server string) {
+			connect(server)
+			fetchSettings("*")
 			updateKeysList()
-			app.SetFocus(getKeysManager().keys)
-			settingSearchManager.setSearchType(NoSearch)
+			app.SetFocus(keysManager.keys)
 		},
 	)
 
@@ -127,7 +100,7 @@ func main() {
 	valuesManager = NewValuesManager(
 		func() {
 			// Escaping out of the revisions dropdown, restore focus to the keys list
-			app.SetFocus(getKeysManager().keys)
+			app.SetFocus(keysManager.keys)
 		},
 		func(p tview.Primitive) {
 			app.SetFocus(p)
@@ -142,8 +115,7 @@ func main() {
 		SetColumns(-3, -4).
 		SetBorders(false).
 		AddItem(header.GetPrimitive(), 0, 0, 1, 2, 0, 0, false).
-		AddItem(keysManager.box, 1, 0, 2, 1, 0, 0, true).
-		AddItem(settingSearchManager.searchBox, 3, 0, 1, 1, 0, 0, false).
+		AddItem(keysManager.GetPrimitive(), 1, 0, 3, 1, 0, 0, true).
 		AddItem(valuesManager.GetPrimitive(), 1, 1, 3, 1, 0, 0, false)
 
 	pageGrid.
@@ -151,92 +123,126 @@ func main() {
 
 	app = tview.NewApplication().SetRoot(pageGrid, true)
 
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		// Block Ctrl-C to exit
-		if event.Key() == tcell.KeyCtrlC {
-			return nil
-		}
-
-		if settingSearchManager.searchType == StringSearch || valuesManager.valueSearchManager.searchType == StringSearch {
-			// We are actively searching, don't steal the keystrokes
-			return event
-		}
-
-		switch event.Rune() {
-		case 'c':
-			copyValue()
-			return nil
-		case 's':
-			app.SetFocus(acDropdown)
-			return nil
-		case 'q':
-			app.Stop()
-			return nil
-		case '/':
-			// Search setting keys or setting value, depending which (if either) is focused
-			if app.GetFocus() == keysManager.keys {
-				settingSearchManager.setSearching(StringSearch)
-				return nil
-			} else if app.GetFocus() == valuesManager.valueTextView {
-				valuesManager.updateValueBasedOnView()
-				valuesManager.valueSearchManager.setSearching(StringSearch)
-				return nil
-			}
-
-		case 'r':
-			// Clear and reset, i.e. re-fetch from source
-			// Don't clear out the values view if we're in Diff mode
-			if viewMode != Diff {
-				valuesManager.reset()
-			}
-
-			// But always do clear the search field
-			settingSearchManager.Reset()
-
-			fetchSettings("*")
-			updateKeysList()
-			app.SetFocus(getKeysManager().keys)
-			return nil
-
-		case 'j':
-			// Toggle JSON rendering
-			if valuesManager.renderType != Json {
-				valuesManager.setRenderType(Json)
-			} else {
-				valuesManager.setRenderType(Plain)
-			}
-			valuesManager.updateValueBasedOnView()
-			return nil
-
-		case 'd':
-			// Diff the current displayed value (if any) with another setting value
-			if viewMode == Standard {
-				// IMPORTANT! You can't enter diff mode if there is not a primary setting selected
-				if len(valuesManager.primaryRevisionSelector.revisions) == 0 {
-					break
-				}
-
-				setDisplayMode(Diff)
-				// Focus the keys list, because pickikng a second setting to
-				// diff is always what you want after entering diff mode
-				app.SetFocus(keysManager.keys)
-			} else {
-				setDisplayMode(Standard)
-			}
-
-		}
-
-		return event
-	})
+	app.SetInputCapture(mainInputCapture)
 
 	// Ready to go, get secrets from the initial vault selection
-	acDropdown.SetCurrentOption(0)
-	fetchSettings("*")
+	// It is important that all of the above is built before setting the default server
+	// in the header dropdown, or it will fetch and attempt to display the settings
+	// before the UI is ready for them
+	header.SelectFirstServer()
 
 	if err := app.Run(); err != nil {
 		panic(err)
 	}
+}
 
+func mainInputCapture(event *tcell.EventKey) *tcell.EventKey {
+	// Block Ctrl-C to exit
+	if event.Key() == tcell.KeyCtrlC {
+		return nil
+	}
+
+	if keysManager.settingSearchManager.searchType == StringSearch || valuesManager.valueSearchManager.searchType == StringSearch {
+		// We are actively searching, don't steal the keystrokes
+		return event
+	}
+
+	switch event.Rune() {
+	case 'c':
+		copyValue()
+		return nil
+	case 's':
+		app.SetFocus(header.acDropdown)
+		return nil
+	case 'q':
+		app.Stop()
+		return nil
+	case '/':
+		// Search setting keys or setting value, depending which (if either) is focused
+		if app.GetFocus() == keysManager.keys {
+			keysManager.settingSearchManager.setSearching(StringSearch)
+			return nil
+		} else if app.GetFocus() == valuesManager.valueTextView {
+			valuesManager.updateValueBasedOnView()
+			valuesManager.valueSearchManager.setSearching(StringSearch)
+			return nil
+		}
+
+	case 'r':
+		// Clear and reset, i.e. re-fetch from source
+		// Don't clear out the values view if we're in Diff mode
+		if viewMode != Diff {
+			valuesManager.reset()
+		}
+
+		// But always do clear the search field
+		keysManager.settingSearchManager.Reset()
+
+		fetchSettings("*")
+		updateKeysList()
+		app.SetFocus(keysManager.keys)
+		return nil
+
+	case 'j':
+		// Toggle JSON rendering
+		if valuesManager.renderType != Json {
+			valuesManager.setRenderType(Json)
+		} else {
+			valuesManager.setRenderType(Plain)
+		}
+		valuesManager.updateValueBasedOnView()
+		return nil
+
+	case 'd':
+		// Diff the current displayed value (if any) with another setting value
+		if viewMode == Standard {
+			// IMPORTANT! You can't enter diff mode if there is not a primary setting selected
+			if len(valuesManager.primaryRevisionSelector.revisions) == 0 {
+				break
+			}
+
+			setDisplayMode(Diff)
+			// Focus the keys list, because picking a second setting to
+			// diff is always what you want after entering diff mode
+			app.SetFocus(keysManager.keys)
+		} else {
+			setDisplayMode(Standard)
+		}
+
+	}
+
+	return event
+}
+
+func serversFromConfigFile(servers []string) []string {
+
+	// Attempt to get config file
+	home, err := os.UserHomeDir()
+	if err == nil {
+		acvConfigFile := path.Join(home, ".acv")
+		_, err = os.Stat(acvConfigFile)
+		if err == nil {
+			// Found a config file.
+			data, err := os.ReadFile(acvConfigFile)
+			if err != nil {
+				panic(fmt.Errorf("error reading confg file at %s", acvConfigFile))
+			}
+
+			var config acvConfig
+			err = yaml.Unmarshal(data, &config)
+			if err != nil {
+				panic(errors.Wrapf(err, "error unmarshalling confg file at %s", acvConfigFile))
+			}
+
+			for _, configServer := range config.ConfigServers {
+				if !slices.Contains(servers, configServer) {
+					servers = append(servers, configServer)
+				}
+			}
+		}
+	}
+
+	return servers
 }
 
 func connect(serverUri string) {
@@ -287,11 +293,7 @@ func findSettings(searchString string) {
 
 func updateKeysList() {
 	keys := arraymap(settings, func(s azappconfig.Setting) string { return *s.Key })
-	getKeysManager().updateKeys(keys)
-}
-
-func getKeysManager() KeysManager {
-	return keysManager
+	keysManager.updateKeys(keys)
 }
 
 func getValuesManager() *ValuesManager {
