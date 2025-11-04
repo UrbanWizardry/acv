@@ -5,11 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
-	"slices"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
@@ -24,7 +20,6 @@ var (
 	settings      []azappconfig.Setting
 	app           *tview.Application
 	header        *Header
-	info          *tview.Grid
 	client        *azappconfig.Client
 	cred          *azidentity.DefaultAzureCredential
 	keysManager   *KeysManager
@@ -59,8 +54,6 @@ func main() {
 
 		configServers = append(configServers, cliServer)
 	}
-
-	configServers = serversFromConfigFile(configServers)
 
 	if len(configServers) == 0 {
 		log.Fatal("No app configurations to open, exiting")
@@ -218,37 +211,6 @@ func mainInputCapture(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	return event
-}
-
-func serversFromConfigFile(servers []string) []string {
-
-	// Attempt to get config file
-	home, err := os.UserHomeDir()
-	if err == nil {
-		acvConfigFile := path.Join(home, ".acv")
-		_, err = os.Stat(acvConfigFile)
-		if err == nil {
-			// Found a config file.
-			data, err := os.ReadFile(acvConfigFile)
-			if err != nil {
-				panic(fmt.Errorf("error reading confg file at %s", acvConfigFile))
-			}
-
-			var config acvConfig
-			err = yaml.Unmarshal(data, &config)
-			if err != nil {
-				panic(errors.Wrapf(err, "error unmarshalling confg file at %s", acvConfigFile))
-			}
-
-			for _, configServer := range config.ConfigServers {
-				if !slices.Contains(servers, configServer) {
-					servers = append(servers, configServer)
-				}
-			}
-		}
-	}
-
-	return servers
 }
 
 func connect(serverUri string) {

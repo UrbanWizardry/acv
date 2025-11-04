@@ -1,24 +1,19 @@
-# kvv
+# acv
 
-TUI Key Vault Viewer for Azure Key Vault
+TUI Viewer for Azure App Configuration
 
-# Running
+# Building and Running
 
-Runs from task currently:
-
-```
-task run -- <your-key-vault-URI>
-```
-
-# Persistent configuration
-
-If you want a peristent list of multiple Key Vaults, and/or prefer not to have to type a URI
-on the command line, create a file like the following at `~/.kvv`
+Builds from Task:
 
 ```
-vaults:
-  - "https://vault-001.vault.azure.net"
-  - "https://vault-002.vault.azure.net"
+task build
 ```
 
-These will appear in the `Vault:` dropdown.
+Run, connecting to specific App Config server:
+
+```
+./build/acv https://my-ac-server.azconfig.io
+```
+
+`https://` is optional, `acv` will add it if you don't provide it.
