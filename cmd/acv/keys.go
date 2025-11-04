@@ -7,6 +7,7 @@ import (
 
 type KeysManager struct {
 	grid                 *tview.Grid
+	keysBox              *tview.Grid
 	keys                 *tview.Table
 	settingSearchManager *SearchManager
 	keySelectedFunc      func(string)
@@ -53,11 +54,11 @@ func NewKeysManager(
 		}
 	}).SetBorderPadding(1, 1, 1, 1)
 
-	keysBox := tview.NewGrid()
-	keysBox.SetBorder(true)
-	keysBox.AddItem(manager.keys, 0, 0, 1, 1, 0, 0, false)
+	manager.keysBox = tview.NewGrid()
+	manager.keysBox.SetBorder(true)
+	manager.keysBox.AddItem(manager.keys, 0, 0, 1, 1, 0, 0, false)
 
-	manager.grid.AddItem(keysBox, 0, 0, 1, 1, 0, 0, false)
+	manager.grid.AddItem(manager.keysBox, 0, 0, 1, 1, 0, 0, false)
 
 	// Setting Search Bar
 	manager.settingSearchManager = NewSearchManager(
@@ -98,5 +99,5 @@ func (km *KeysManager) settingSelected(row int, col int) {
 }
 
 func (km *KeysManager) SetTitle(title string) {
-	km.grid.SetTitle(title)
+	km.keysBox.SetTitle(title)
 }

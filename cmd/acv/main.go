@@ -51,7 +51,13 @@ type acvConfig struct {
 func main() {
 	configServers := []string{}
 	if len(os.Args) > 1 {
-		configServers = append(configServers, os.Args[1])
+		cliServer := os.Args[1]
+		// This validation is a little weak
+		if !strings.HasPrefix(cliServer, "https://") {
+			cliServer = fmt.Sprintf("https://%s", cliServer)
+		}
+
+		configServers = append(configServers, cliServer)
 	}
 
 	configServers = serversFromConfigFile(configServers)
